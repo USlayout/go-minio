@@ -8,25 +8,39 @@ import (
     "net/http"
     "strings"
     "github.com/USlayout/go-minio/storage"
+    "github.com/USlayout/go-minio/auth"
 )
 
 func StartServer(addr string) error {
-    http.HandleFunc("/upload", handleUpload)
-    http.HandleFunc("/download", handleDownload)
-    http.HandleFunc("/delete", handleDelete)
-    http.HandleFunc("/mkdir", handleMakeDir)     // フォルダ作成
-    http.HandleFunc("/list", handleList)         // ファイル/フォルダ一覧
+    // 認証エンドポイント
+    http.HandleFunc("/auth/login", handleLogin)
+    http.HandleFunc("/auth/refresh", handleRefresh)
+    http.HandleFunc("/auth/me", auth.JWTMiddleware(handleMe))
+    
+    // 保護されたエンドポイント（JWT認証が必要）
+    http.HandleFunc("/upload", auth.JWTMiddleware(handleUpload))
+    http.HandleFunc("/download", auth.JWTMiddleware(handleDownload))
+    http.HandleFunc("/delete", auth.JWTMiddleware(handleDelete))
+    http.HandleFunc("/mkdir", auth.JWTMiddleware(handleMakeDir))
+    http.HandleFunc("/list", auth.JWTMiddleware(handleList))
+    
+    // 管理者専用エンドポイント
+    http.HandleFunc("/admin/users", auth.AdminOnlyMiddleware(handleAdminUsers))
     
     // CORS対応
     http.HandleFunc("/", corsMiddleware)
 
     fmt.Println("MinIO Cloud Storage Server running on", addr)
     fmt.Println("Available endpoints:")
-    fmt.Println("  POST /upload   - ファイルアップロード")
-    fmt.Println("  GET  /download - ファイルダウンロード") 
-    fmt.Println("  DELETE /delete - ファイル削除")
-    fmt.Println("  POST /mkdir    - フォルダ作成")
-    fmt.Println("  GET  /list     - ファイル/フォルダ一覧")
+    fmt.Println("  POST /auth/login    - ユーザーログイン")
+    fmt.Println("  POST /auth/refresh  - トークンリフレッシュ")
+    fmt.Println("  GET  /auth/me       - ユーザー情報取得")
+    fmt.Println("  POST /upload        - ファイルアップロード (要認証)")
+    fmt.Println("  GET  /download      - ファイルダウンロード (要認証)")
+    fmt.Println("  DELETE /delete      - ファイル削除 (要認証)")
+    fmt.Println("  POST /mkdir         - フォルダ作成 (要認証)")
+    fmt.Println("  GET  /list          - ファイル/フォルダ一覧 (要認証)")
+    fmt.Println("  GET  /admin/users   - ユーザー管理 (管理者のみ)")
     
     return http.ListenAndServe(addr, nil)
 }
@@ -34,7 +48,7 @@ func StartServer(addr string) error {
 func corsMiddleware(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Access-Control-Allow-Origin", "*")
     w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-    w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+    w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
     
     if r.Method == "OPTIONS" {
         w.WriteHeader(http.StatusOK)
@@ -42,6 +56,133 @@ func corsMiddleware(w http.ResponseWriter, r *http.Request) {
     }
     
     http.Error(w, "Not Found", http.StatusNotFound)
+}
+
+// ログインハンドラー
+func handleLogin(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Access-Control-Allow-Origin", "*")
+    w.Header().Set("Content-Type", "application/json")
+    
+    if r.Method != http.MethodPost {
+        http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+        return
+    }
+    
+    var loginReq struct {
+        UserID   string `json:"userID"`
+        Password string `json:"password"`
+    }
+    
+    if err := json.NewDecoder(r.Body).Decode(&loginReq); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+    
+    // ユーザー認証
+    user, err := auth.AuthenticateUser(loginReq.UserID, loginReq.Password)
+    if err != nil {
+        http.Error(w, "Authentication failed: "+err.Error(), http.StatusUnauthorized)
+        return
+    }
+    
+    // JWTトークン生成
+    accessToken, err := auth.GenerateToken(*user)
+    if err != nil {
+        http.Error(w, "Token generation failed", http.StatusInternalServerError)
+        return
+    }
+    
+    // リフレッシュトークン生成
+    refreshToken, err := auth.GenerateRefreshToken(user.UserID)
+    if err != nil {
+        http.Error(w, "Refresh token generation failed", http.StatusInternalServerError)
+        return
+    }
+    
+    response := map[string]interface{}{
+        "accessToken":  accessToken,
+        "refreshToken": refreshToken,
+        "user":         user,
+        "expiresIn":    86400, // 24時間（秒）
+    }
+    
+    json.NewEncoder(w).Encode(response)
+}
+
+// トークンリフレッシュハンドラー
+func handleRefresh(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Access-Control-Allow-Origin", "*")
+    w.Header().Set("Content-Type", "application/json")
+    
+    if r.Method != http.MethodPost {
+        http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+        return
+    }
+    
+    var refreshReq struct {
+        RefreshToken string `json:"refreshToken"`
+    }
+    
+    if err := json.NewDecoder(r.Body).Decode(&refreshReq); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+    
+    // 新しいアクセストークンを生成
+    newAccessToken, err := auth.RefreshAccessToken(refreshReq.RefreshToken)
+    if err != nil {
+        http.Error(w, "Token refresh failed: "+err.Error(), http.StatusUnauthorized)
+        return
+    }
+    
+    response := map[string]interface{}{
+        "accessToken": newAccessToken,
+        "expiresIn":   86400, // 24時間（秒）
+    }
+    
+    json.NewEncoder(w).Encode(response)
+}
+
+// ユーザー情報取得ハンドラー
+func handleMe(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Access-Control-Allow-Origin", "*")
+    w.Header().Set("Content-Type", "application/json")
+    
+    if r.Method != http.MethodGet {
+        http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+        return
+    }
+    
+    userID := r.Header.Get("X-User-ID")
+    role := r.Header.Get("X-User-Role")
+    
+    response := map[string]interface{}{
+        "userID": userID,
+        "role":   role,
+    }
+    
+    json.NewEncoder(w).Encode(response)
+}
+
+// 管理者専用ユーザー管理ハンドラー
+func handleAdminUsers(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Access-Control-Allow-Origin", "*")
+    w.Header().Set("Content-Type", "application/json")
+    
+    if r.Method != http.MethodGet {
+        http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+        return
+    }
+    
+    // 簡単なユーザー一覧を返す（実際のアプリケーションではデータベースから取得）
+    users := []map[string]interface{}{
+        {"userID": "user123", "username": "testuser", "role": "user"},
+        {"userID": "admin", "username": "admin", "role": "admin"},
+    }
+    
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "users": users,
+    })
 }
 
 func handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -53,10 +194,11 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // ユーザーIDと仮想パスを取得
-    userID := r.FormValue("userID")
+    // 認証済みユーザーIDを取得
+    userID := r.Header.Get("X-User-ID")
     if userID == "" {
-        userID = "default" // デフォルトユーザー
+        http.Error(w, "User ID not found in token", http.StatusBadRequest)
+        return
     }
     
     virtualPath := r.FormValue("path")
@@ -103,10 +245,11 @@ func handleMakeDir(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // ユーザーIDと仮想パスを取得
-    userID := r.FormValue("userID")
+    // 認証済みユーザーIDを取得
+    userID := r.Header.Get("X-User-ID")
     if userID == "" {
-        userID = "default"
+        http.Error(w, "User ID not found in token", http.StatusBadRequest)
+        return
     }
     
     folderPath := r.FormValue("path")
@@ -277,10 +420,11 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
     // CORS設定
     w.Header().Set("Access-Control-Allow-Origin", "*")
     
-    // ユーザーIDと仮想パスとファイル名を取得
-    userID := r.URL.Query().Get("userID")
+    // 認証済みユーザーIDを取得
+    userID := r.Header.Get("X-User-ID")
     if userID == "" {
-        userID = "default"
+        http.Error(w, "User ID not found in token", http.StatusBadRequest)
+        return
     }
     
     path := r.URL.Query().Get("path")
@@ -319,10 +463,11 @@ func handleList(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // ユーザーIDと仮想パスを取得
-    userID := r.URL.Query().Get("userID")
+    // 認証済みユーザーIDを取得
+    userID := r.Header.Get("X-User-ID")
     if userID == "" {
-        userID = "default"
+        http.Error(w, "User ID not found in token", http.StatusBadRequest)
+        return
     }
     
     path := r.URL.Query().Get("path")
@@ -347,10 +492,11 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // ユーザーIDと仮想パスとファイル名を取得
-    userID := r.URL.Query().Get("userID")
+    // 認証済みユーザーIDを取得
+    userID := r.Header.Get("X-User-ID")
     if userID == "" {
-        userID = "default"
+        http.Error(w, "User ID not found in token", http.StatusBadRequest)
+        return
     }
     
     path := r.URL.Query().Get("path")
