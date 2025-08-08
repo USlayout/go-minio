@@ -6,22 +6,28 @@ import (
     "io"
     "log"
     "net/http"
+    "strings"
     "github.com/USlayout/go-minio/storage"
 )
 
 func StartServer(addr string) error {
     http.HandleFunc("/upload", handleUpload)
-    http.HandleFunc("/upload-multiple", handleMultipleUpload)  // 複数ファイルアップロード
-    http.HandleFunc("/upload-folder", handleFolderUpload)     // フォルダアップロード
     http.HandleFunc("/download", handleDownload)
-    http.HandleFunc("/list", handleList)      // 新規追加
-    http.HandleFunc("/list-folders", handleListFolders)  // フォルダ構造付き一覧
-    http.HandleFunc("/delete", handleDelete)  // 新規追加
+    http.HandleFunc("/delete", handleDelete)
+    http.HandleFunc("/mkdir", handleMakeDir)     // フォルダ作成
+    http.HandleFunc("/list", handleList)         // ファイル/フォルダ一覧
     
     // CORS対応
     http.HandleFunc("/", corsMiddleware)
 
-    fmt.Println("Server running on", addr)
+    fmt.Println("MinIO Cloud Storage Server running on", addr)
+    fmt.Println("Available endpoints:")
+    fmt.Println("  POST /upload   - ファイルアップロード")
+    fmt.Println("  GET  /download - ファイルダウンロード") 
+    fmt.Println("  DELETE /delete - ファイル削除")
+    fmt.Println("  POST /mkdir    - フォルダ作成")
+    fmt.Println("  GET  /list     - ファイル/フォルダ一覧")
+    
     return http.ListenAndServe(addr, nil)
 }
 
@@ -47,6 +53,17 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // ユーザーIDと仮想パスを取得
+    userID := r.FormValue("userID")
+    if userID == "" {
+        userID = "default" // デフォルトユーザー
+    }
+    
+    virtualPath := r.FormValue("path")
+    if virtualPath == "" {
+        virtualPath = "" // ルートディレクトリ
+    }
+
     file, header, err := r.FormFile("file")
     if err != nil {
         http.Error(w, "Invalid file", http.StatusBadRequest)
@@ -54,13 +71,62 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
     }
     defer file.Close()
 
-    err = storage.SaveFile(header.Filename, file, header.Size)
+    // オブジェクトキーを構築: <ユーザーID>/<仮想ディレクトリパス>/<ファイル名>
+    objectKey := buildObjectKey(userID, virtualPath, header.Filename)
+
+    err = storage.SaveFile(objectKey, file, header.Size)
     if err != nil {
         http.Error(w, "Upload failed: "+err.Error(), http.StatusInternalServerError)
         return
     }
 
-    fmt.Fprintf(w, "Uploaded: %s\n", header.Filename)
+    fmt.Fprintf(w, "Uploaded: %s\n", objectKey)
+}
+
+// オブジェクトキーを構築する関数
+func buildObjectKey(userID, virtualPath, filename string) string {
+    if virtualPath == "" {
+        return fmt.Sprintf("%s/%s", userID, filename)
+    }
+    // パスの正規化
+    virtualPath = strings.Trim(virtualPath, "/")
+    return fmt.Sprintf("%s/%s/%s", userID, virtualPath, filename)
+}
+
+// フォルダ作成ハンドラー（ダミーオブジェクト使用）
+func handleMakeDir(w http.ResponseWriter, r *http.Request) {
+    // CORS設定
+    w.Header().Set("Access-Control-Allow-Origin", "*")
+    
+    if r.Method != http.MethodPost {
+        http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+        return
+    }
+
+    // ユーザーIDと仮想パスを取得
+    userID := r.FormValue("userID")
+    if userID == "" {
+        userID = "default"
+    }
+    
+    folderPath := r.FormValue("path")
+    if folderPath == "" {
+        http.Error(w, "Missing path parameter", http.StatusBadRequest)
+        return
+    }
+
+    // .keepオブジェクトを作成して空フォルダを表現
+    objectKey := buildObjectKey(userID, folderPath, ".keep")
+    
+    // 空の内容で.keepファイルを作成
+    emptyContent := strings.NewReader("")
+    err := storage.SaveFile(objectKey, emptyContent, 0)
+    if err != nil {
+        http.Error(w, "Failed to create folder: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    fmt.Fprintf(w, "Folder created: %s/%s\n", userID, folderPath)
 }
 
 // 複数ファイルアップロードハンドラー
@@ -73,8 +139,16 @@ func handleMultipleUpload(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // フォーム解析（最大32MBまで）
-    err := r.ParseMultipartForm(32 << 20)
+    // ユーザーIDと仮想パスを取得
+    userID := r.FormValue("userID")
+    if userID == "" {
+        userID = "default"
+    }
+    
+    virtualPath := r.FormValue("path")
+
+    // フォーム解析（最大100MBまで）
+    err := r.ParseMultipartForm(100 << 20)
     if err != nil {
         http.Error(w, "Failed to parse form", http.StatusBadRequest)
         return
@@ -96,13 +170,16 @@ func handleMultipleUpload(w http.ResponseWriter, r *http.Request) {
             continue
         }
 
-        err = storage.SaveFile(fileHeader.Filename, file, fileHeader.Size)
+        // オブジェクトキーを構築（フォルダ構造を維持）
+        objectKey := buildObjectKey(userID, virtualPath, fileHeader.Filename)
+        
+        err = storage.SaveFile(objectKey, file, fileHeader.Size)
         file.Close()
 
         if err != nil {
-            errors = append(errors, fmt.Sprintf("Failed to save %s: %v", fileHeader.Filename, err))
+            errors = append(errors, fmt.Sprintf("Failed to save %s: %v", objectKey, err))
         } else {
-            uploadedFiles = append(uploadedFiles, fileHeader.Filename)
+            uploadedFiles = append(uploadedFiles, objectKey)
         }
     }
 
@@ -200,20 +277,31 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
     // CORS設定
     w.Header().Set("Access-Control-Allow-Origin", "*")
     
-    name := r.URL.Query().Get("name")
-    if name == "" {
-        http.Error(w, "Missing name param", http.StatusBadRequest)
+    // ユーザーIDと仮想パスとファイル名を取得
+    userID := r.URL.Query().Get("userID")
+    if userID == "" {
+        userID = "default"
+    }
+    
+    path := r.URL.Query().Get("path")
+    filename := r.URL.Query().Get("filename")
+    
+    if filename == "" {
+        http.Error(w, "Missing filename parameter", http.StatusBadRequest)
         return
     }
 
-    reader, err := storage.GetFile(name)
+    // オブジェクトキーを構築
+    objectKey := buildObjectKey(userID, path, filename)
+
+    reader, err := storage.GetFile(objectKey)
     if err != nil {
         http.Error(w, "Download failed: "+err.Error(), http.StatusInternalServerError)
         return
     }
     defer reader.Close()
 
-    w.Header().Set("Content-Disposition", "attachment; filename="+name)
+    w.Header().Set("Content-Disposition", "attachment; filename="+filename)
     _, err = io.Copy(w, reader)
     if err != nil {
         log.Printf("Error copying file: %v", err)
@@ -231,13 +319,22 @@ func handleList(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    files, err := storage.ListFiles()
+    // ユーザーIDと仮想パスを取得
+    userID := r.URL.Query().Get("userID")
+    if userID == "" {
+        userID = "default"
+    }
+    
+    path := r.URL.Query().Get("path")
+
+    // 階層構造でファイル/フォルダ一覧を取得
+    items, err := storage.ListUserFiles(userID, path)
     if err != nil {
         http.Error(w, "Failed to list files: "+err.Error(), http.StatusInternalServerError)
         return
     }
 
-    json.NewEncoder(w).Encode(files)
+    json.NewEncoder(w).Encode(items)
 }
 
 // ファイル削除ハンドラー
@@ -250,17 +347,28 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    name := r.URL.Query().Get("name")
-    if name == "" {
-        http.Error(w, "Missing name param", http.StatusBadRequest)
+    // ユーザーIDと仮想パスとファイル名を取得
+    userID := r.URL.Query().Get("userID")
+    if userID == "" {
+        userID = "default"
+    }
+    
+    path := r.URL.Query().Get("path")
+    filename := r.URL.Query().Get("filename")
+    
+    if filename == "" {
+        http.Error(w, "Missing filename parameter", http.StatusBadRequest)
         return
     }
 
-    err := storage.DeleteFile(name)
+    // オブジェクトキーを構築
+    objectKey := buildObjectKey(userID, path, filename)
+
+    err := storage.DeleteFile(objectKey)
     if err != nil {
         http.Error(w, "Delete failed: "+err.Error(), http.StatusInternalServerError)
         return
     }
 
-    fmt.Fprintf(w, "Deleted: %s\n", name)
+    fmt.Fprintf(w, "Deleted: %s\n", objectKey)
 }

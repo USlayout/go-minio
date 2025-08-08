@@ -126,6 +126,71 @@ func buildFolderStructure(files []FileInfo) map[string]interface{} {
     return root
 }
 
+// ユーザー別階層構造でファイル/フォルダ一覧を取得
+func ListUserFiles(userID, path string) (map[string]interface{}, error) {
+    ctx := context.Background()
+    
+    // プレフィックスを構築
+    prefix := userID + "/"
+    if path != "" {
+        prefix += strings.Trim(path, "/") + "/"
+    }
+    
+    objectCh := client.ListObjects(ctx, bucketName, minio.ListObjectsOptions{
+        Prefix:    prefix,
+        Recursive: false, // 指定階層のみ
+    })
+
+    files := []string{}
+    folders := map[string]bool{}
+
+    for object := range objectCh {
+        if object.Err != nil {
+            return nil, object.Err
+        }
+
+        // プレフィックスを除去して相対パスを取得
+        relativePath := strings.TrimPrefix(object.Key, prefix)
+        
+        // .keepファイルは除外（フォルダ作成用ダミー）
+        if strings.HasSuffix(relativePath, ".keep") {
+            folderName := strings.TrimSuffix(relativePath, "/.keep")
+            if folderName != "" {
+                folders[folderName] = true
+            }
+            continue
+        }
+        
+        // サブディレクトリの場合
+        if strings.Contains(relativePath, "/") {
+            folderName := strings.Split(relativePath, "/")[0]
+            folders[folderName] = true
+        } else if relativePath != "" {
+            // ファイルの場合
+            files = append(files, relativePath)
+        }
+    }
+
+    // 結果をまとめる
+    result := map[string]interface{}{
+        "path":    path,
+        "userID":  userID,
+        "files":   files,
+        "folders": getFolderList(folders),
+    }
+
+    return result, nil
+}
+
+// フォルダマップからスライスに変換
+func getFolderList(folders map[string]bool) []string {
+    var result []string
+    for folder := range folders {
+        result = append(result, folder)
+    }
+    return result
+}
+
 // DeleteFile ファイルを削除
 func DeleteFile(filename string) error {
     err := client.RemoveObject(context.Background(), bucketName, filename, minio.RemoveObjectOptions{})
