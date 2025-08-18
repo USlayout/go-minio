@@ -57,6 +57,25 @@ curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   http://app.nitmcr.f5.si:8080/upload
 ```
 
+### 1-2. 複数ファイルアップロード
+```bash
+# 複数ファイルの一括アップロード
+curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -F "files=@file1.txt" -F "files=@file2.txt" -F "files=@file3.pdf" \
+  -F "path=documents" \
+  http://app.nitmcr.f5.si:8080/upload-multiple
+```
+
+### 1-3. フォルダアップロード
+```bash
+# フォルダ内のファイルを一括アップロード（フォルダ構造を保持）
+curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -F "files=@folder/subfolder/file1.txt" \
+  -F "files=@folder/file2.txt" \
+  -F "path=projects" \
+  http://app.nitmcr.f5.si:8080/upload-folder
+```
+
 ### 2. フォルダ作成
 ```bash
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
@@ -75,6 +94,20 @@ curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   "http://app.nitmcr.f5.si:8080/list?path=docs"
 ```
 
+### 3-2. ファイル詳細一覧取得
+```bash
+# 詳細情報付きでファイル一覧取得（ファイルサイズ、更新日時、統計情報含む）
+curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  "http://app.nitmcr.f5.si:8080/list-details?path=docs"
+```
+
+### 3-3. フォルダ構造一覧取得
+```bash
+# ユーザーのフォルダ構造を詳細情報付きで取得
+curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  "http://app.nitmcr.f5.si:8080/list-folders"
+```
+
 ### 4. ファイルダウンロード
 ```bash
 # ファイルダウンロード
@@ -90,6 +123,29 @@ curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
 ```bash
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -X DELETE "http://app.nitmcr.f5.si:8080/delete?path=docs&filename=test.txt"
+```
+
+## ファイル情報取得（認証が必要）
+
+### 1. ファイル詳細情報取得
+```bash
+# ファイルの詳細情報（サイズ、更新日時、コンテンツタイプ）を取得
+curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  "http://app.nitmcr.f5.si:8080/info?path=docs&filename=report.pdf"
+```
+
+### 2. ファイルサイズ取得
+```bash
+# ファイルサイズのみを取得（人間が読みやすい形式も含む）
+curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  "http://app.nitmcr.f5.si:8080/size?path=docs&filename=report.pdf"
+```
+
+### 3. ファイルメタデータ取得
+```bash
+# ファイルの完全なメタデータ（ETag、バージョンID、ストレージクラスなど）を取得
+curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  "http://app.nitmcr.f5.si:8080/metadata?path=docs&filename=report.pdf"
 ```
 
 ## 管理者専用エンドポイント
@@ -121,6 +177,16 @@ $form = @{
 }
 Invoke-RestMethod -Uri "http://app.nitmcr.f5.si:8080/upload" -Method Post -Form $form -Headers $headers
 
+# 複数ファイルアップロード
+$files = @("file1.txt", "file2.txt", "file3.pdf")
+$form = @{
+    path = "documents"
+}
+foreach ($file in $files) {
+    $form["files"] = Get-Item $file
+}
+Invoke-RestMethod -Uri "http://app.nitmcr.f5.si:8080/upload-multiple" -Method Post -Form $form -Headers $headers
+
 # フォルダ作成
 $body = @{ path = "docs/new_folder" }
 Invoke-RestMethod -Uri "http://app.nitmcr.f5.si:8080/mkdir" -Method Post -Body $body -Headers $headers
@@ -128,6 +194,18 @@ Invoke-RestMethod -Uri "http://app.nitmcr.f5.si:8080/mkdir" -Method Post -Body $
 # ファイル一覧
 $files = Invoke-RestMethod -Uri "http://app.nitmcr.f5.si:8080/list?path=docs" -Headers $headers
 $files | ConvertTo-Json
+
+# 詳細ファイル一覧
+$detailedFiles = Invoke-RestMethod -Uri "http://app.nitmcr.f5.si:8080/list-details?path=docs" -Headers $headers
+$detailedFiles | ConvertTo-Json
+
+# ファイル情報取得
+$fileInfo = Invoke-RestMethod -Uri "http://app.nitmcr.f5.si:8080/info?path=docs&filename=report.pdf" -Headers $headers
+$fileInfo | ConvertTo-Json
+
+# ファイルサイズ取得
+$fileSize = Invoke-RestMethod -Uri "http://app.nitmcr.f5.si:8080/size?path=docs&filename=report.pdf" -Headers $headers
+Write-Output "File size: $($fileSize.sizeHuman)"
 
 # ファイルダウンロード
 Invoke-WebRequest -Uri "http://app.nitmcr.f5.si:8080/download?path=docs&filename=test.txt" -Headers $headers -OutFile "downloaded_test.txt"
@@ -181,6 +259,32 @@ async function uploadFile(file, path = '') {
     return response.text();
 }
 
+// 複数ファイルアップロード
+async function uploadMultipleFiles(files, path = '') {
+    const token = localStorage.getItem('accessToken');
+    const formData = new FormData();
+    
+    files.forEach(file => {
+        formData.append('files', file);
+    });
+    
+    if (path) formData.append('path', path);
+    
+    const response = await fetch('http://app.nitmcr.f5.si:8080/upload-multiple', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        },
+        body: formData
+    });
+    
+    if (!response.ok) {
+        throw new Error('Multiple upload failed');
+    }
+    
+    return response.json();
+}
+
 // ファイル一覧取得
 async function listFiles(path = '') {
     const token = localStorage.getItem('accessToken');
@@ -201,14 +305,80 @@ async function listFiles(path = '') {
     return response.json();
 }
 
+// 詳細ファイル一覧取得
+async function listFilesWithDetails(path = '') {
+    const token = localStorage.getItem('accessToken');
+    const url = path ? 
+        `http://app.nitmcr.f5.si:8080/list-details?path=${encodeURIComponent(path)}` :
+        'http://app.nitmcr.f5.si:8080/list-details';
+    
+    const response = await fetch(url, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+    
+    if (!response.ok) {
+        throw new Error('Failed to list files with details');
+    }
+    
+    return response.json();
+}
+
+// ファイル情報取得
+async function getFileInfo(filename, path = '') {
+    const token = localStorage.getItem('accessToken');
+    const url = path ? 
+        `http://app.nitmcr.f5.si:8080/info?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(filename)}` :
+        `http://app.nitmcr.f5.si:8080/info?filename=${encodeURIComponent(filename)}`;
+    
+    const response = await fetch(url, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+    
+    if (!response.ok) {
+        throw new Error('Failed to get file info');
+    }
+    
+    return response.json();
+}
+
+// ファイルサイズ取得
+async function getFileSize(filename, path = '') {
+    const token = localStorage.getItem('accessToken');
+    const url = path ? 
+        `http://app.nitmcr.f5.si:8080/size?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(filename)}` :
+        `http://app.nitmcr.f5.si:8080/size?filename=${encodeURIComponent(filename)}`;
+    
+    const response = await fetch(url, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+    
+    if (!response.ok) {
+        throw new Error('Failed to get file size');
+    }
+    
+    return response.json();
+}
+
 // 使用例
 login('user123', 'password123')
     .then(data => {
         console.log('Logged in:', data.user);
-        return listFiles();
+        return listFilesWithDetails();
     })
     .then(files => {
-        console.log('Files:', files);
+        console.log('Files with details:', files);
+        console.log('Total files:', files.statistics.totalFiles);
+        console.log('Total size:', files.statistics.totalSizeHuman);
+        return getFileInfo('report.pdf', 'docs');
+    })
+    .then(fileInfo => {
+        console.log('File info:', fileInfo);
     })
     .catch(error => {
         console.error('Error:', error);
@@ -250,5 +420,78 @@ login('user123', 'password123')
   "userID": "user123",
   "files": ["report.pdf", "summary.txt"],
   "folders": ["reports", "images"]
+}
+```
+
+### 詳細ファイル一覧レスポンス
+```json
+{
+  "path": "docs",
+  "userID": "user123",
+  "files": [
+    {
+      "name": "report.pdf",
+      "size": 2097152,
+      "lastModified": "2025-08-19T10:30:00Z",
+      "contentType": "application/pdf"
+    },
+    {
+      "name": "summary.txt",
+      "size": 1024,
+      "lastModified": "2025-08-19T09:15:00Z",
+      "contentType": "text/plain"
+    }
+  ],
+  "folders": [
+    {
+      "name": "reports",
+      "type": "folder",
+      "itemCount": 5,
+      "lastModified": "2025-08-19T11:00:00Z"
+    }
+  ],
+  "statistics": {
+    "totalFiles": 2,
+    "totalFolders": 1,
+    "totalSize": 2098176,
+    "totalSizeHuman": "2.0 MB",
+    "latestModified": "2025-08-19T11:00:00Z"
+  }
+}
+```
+
+### ファイル情報レスポンス
+```json
+{
+  "name": "user123/docs/report.pdf",
+  "size": 2097152,
+  "lastModified": "2025-08-19T10:30:00Z",
+  "contentType": "application/pdf"
+}
+```
+
+### ファイルサイズレスポンス
+```json
+{
+  "filename": "report.pdf",
+  "path": "docs",
+  "size": 2097152,
+  "sizeHuman": "2.0 MB"
+}
+```
+
+### 複数ファイルアップロードレスポンス
+```json
+{
+  "uploaded": [
+    "user123/documents/file1.txt",
+    "user123/documents/file2.txt"
+  ],
+  "errors": [
+    "Failed to save user123/documents/file3.pdf: file too large"
+  ],
+  "total": 3,
+  "success": 2,
+  "failed": 1
 }
 ```
