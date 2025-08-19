@@ -49,7 +49,7 @@ curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
 
 # クエリパラメータでトークン指定
 curl -F "file=@test.txt" -F "path=docs" \
-  "http://app.nitmcr.f5.si/upload?token=YOUR_ACCESS_TOKEN"
+  "https://app.nitmcr.f5.si/upload?token=YOUR_ACCESS_TOKEN"
 
 # ルートディレクトリにアップロード
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
@@ -87,42 +87,42 @@ curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
 ```bash
 # ユーザーのルートディレクトリ一覧
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  "http://app.nitmcr.f5.si/list"
+  "https://app.nitmcr.f5.si/list"
 
 # 特定フォルダの一覧
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  "http://app.nitmcr.f5.si/list?path=docs"
+  "https://app.nitmcr.f5.si/list?path=docs"
 ```
 
 ### 3-2. ファイル詳細一覧取得
 ```bash
 # 詳細情報付きでファイル一覧取得（ファイルサイズ、更新日時、統計情報含む）
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  "http://app.nitmcr.f5.si/list-details?path=docs"
+  "https://app.nitmcr.f5.si/list-details?path=docs"
 ```
 
 ### 3-3. フォルダ構造一覧取得
 ```bash
 # ユーザーのフォルダ構造を詳細情報付きで取得
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  "http://app.nitmcr.f5.si/list-folders"
+  "https://app.nitmcr.f5.si/list-folders"
 ```
 
 ### 4. ファイルダウンロード
 ```bash
 # ファイルダウンロード
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  "http://app.nitmcr.f5.si/download?path=docs&filename=test.txt" -O
+  "https://app.nitmcr.f5.si/download?path=docs&filename=test.txt" -O
 
 # ルートディレクトリのファイル
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  "http://app.nitmcr.f5.si/download?filename=test.txt" -O
+  "https://app.nitmcr.f5.si/download?filename=test.txt" -O
 ```
 
 ### 5. ファイル削除
 ```bash
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -X DELETE "http://app.nitmcr.f5.si/delete?path=docs&filename=test.txt"
+  -X DELETE "https://app.nitmcr.f5.si/delete?path=docs&filename=test.txt"
 ```
 
 ## ファイル情報取得（認証が必要）
@@ -131,21 +131,21 @@ curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
 ```bash
 # ファイルの詳細情報（サイズ、更新日時、コンテンツタイプ）を取得
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  "http://app.nitmcr.f5.si/info?path=docs&filename=report.pdf"
+  "https://app.nitmcr.f5.si/info?path=docs&filename=report.pdf"
 ```
 
 ### 2. ファイルサイズ取得
 ```bash
 # ファイルサイズのみを取得（人間が読みやすい形式も含む）
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  "http://app.nitmcr.f5.si/size?path=docs&filename=report.pdf"
+  "https://app.nitmcr.f5.si/size?path=docs&filename=report.pdf"
 ```
 
 ### 3. ファイルメタデータ取得
 ```bash
 # ファイルの完全なメタデータ（ETag、バージョンID、ストレージクラスなど）を取得
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  "http://app.nitmcr.f5.si/metadata?path=docs&filename=report.pdf"
+  "https://app.nitmcr.f5.si/metadata?path=docs&filename=report.pdf"
 ```
 
 ## 管理者専用エンドポイント
@@ -154,7 +154,7 @@ curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
 ```bash
 # ユーザー一覧取得（管理者のみ）
 curl -H "Authorization: Bearer ADMIN_ACCESS_TOKEN" \
-  "http://app.nitmcr.f5.si/admin/users"
+  "https://app.nitmcr.f5.si/admin/users"
 ```
 
 ## PowerShell例
@@ -166,7 +166,7 @@ $loginData = @{
     password = "password123"
 } | ConvertTo-Json
 
-$response = Invoke-RestMethod -Uri "http://app.nitmcr.f5.si/auth/login" -Method Post -Body $loginData -ContentType "application/json"
+$response = Invoke-RestMethod -Uri "https://app.nitmcr.f5.si/auth/login" -Method Post -Body $loginData -ContentType "application/json"
 $accessToken = $response.accessToken
 
 # ファイルアップロード
@@ -175,7 +175,7 @@ $form = @{
     file = Get-Item "test.txt"
     path = "docs/reports"
 }
-Invoke-RestMethod -Uri "http://app.nitmcr.f5.si/upload" -Method Post -Form $form -Headers $headers
+Invoke-RestMethod -Uri "https://app.nitmcr.f5.si/upload" -Method Post -Form $form -Headers $headers
 
 # 複数ファイルアップロード
 $files = @("file1.txt", "file2.txt", "file3.pdf")
@@ -185,33 +185,33 @@ $form = @{
 foreach ($file in $files) {
     $form["files"] = Get-Item $file
 }
-Invoke-RestMethod -Uri "http://app.nitmcr.f5.si/upload-multiple" -Method Post -Form $form -Headers $headers
+Invoke-RestMethod -Uri "https://app.nitmcr.f5.si/upload-multiple" -Method Post -Form $form -Headers $headers
 
 # フォルダ作成
 $body = @{ path = "docs/new_folder" }
-Invoke-RestMethod -Uri "http://app.nitmcr.f5.si/mkdir" -Method Post -Body $body -Headers $headers
+Invoke-RestMethod -Uri "https://app.nitmcr.f5.si/mkdir" -Method Post -Body $body -Headers $headers
 
 # ファイル一覧
-$files = Invoke-RestMethod -Uri "http://app.nitmcr.f5.si/list?path=docs" -Headers $headers
+$files = Invoke-RestMethod -Uri "https://app.nitmcr.f5.si/list?path=docs" -Headers $headers
 $files | ConvertTo-Json
 
 # 詳細ファイル一覧
-$detailedFiles = Invoke-RestMethod -Uri "http://app.nitmcr.f5.si/list-details?path=docs" -Headers $headers
+$detailedFiles = Invoke-RestMethod -Uri "https://app.nitmcr.f5.si/list-details?path=docs" -Headers $headers
 $detailedFiles | ConvertTo-Json
 
 # ファイル情報取得
-$fileInfo = Invoke-RestMethod -Uri "http://app.nitmcr.f5.si/info?path=docs&filename=report.pdf" -Headers $headers
+$fileInfo = Invoke-RestMethod -Uri "https://app.nitmcr.f5.si/info?path=docs&filename=report.pdf" -Headers $headers
 $fileInfo | ConvertTo-Json
 
 # ファイルサイズ取得
-$fileSize = Invoke-RestMethod -Uri "http://app.nitmcr.f5.si/size?path=docs&filename=report.pdf" -Headers $headers
+$fileSize = Invoke-RestMethod -Uri "https://app.nitmcr.f5.si/size?path=docs&filename=report.pdf" -Headers $headers
 Write-Output "File size: $($fileSize.sizeHuman)"
 
 # ファイルダウンロード
-Invoke-WebRequest -Uri "http://app.nitmcr.f5.si/download?path=docs&filename=test.txt" -Headers $headers -OutFile "downloaded_test.txt"
+Invoke-WebRequest -Uri "https://app.nitmcr.f5.si/download?path=docs&filename=test.txt" -Headers $headers -OutFile "downloaded_test.txt"
 
 # ファイル削除
-Invoke-RestMethod -Uri "http://app.nitmcr.f5.si/delete?path=docs&filename=test.txt" -Method Delete -Headers $headers
+Invoke-RestMethod -Uri "https://app.nitmcr.f5.si/delete?path=docs&filename=test.txt" -Method Delete -Headers $headers
 ```
 
 ## JavaScript/Fetch API例
@@ -219,7 +219,7 @@ Invoke-RestMethod -Uri "http://app.nitmcr.f5.si/delete?path=docs&filename=test.t
 ```javascript
 // ログイン
 async function login(userID, password) {
-    const response = await fetch('http://app.nitmcr.f5.si/auth/login', {
+    const response = await fetch('https://app.nitmcr.f5.si/auth/login', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -244,7 +244,7 @@ async function uploadFile(file, path = '') {
     formData.append('file', file);
     if (path) formData.append('path', path);
     
-    const response = await fetch('http://app.nitmcr.f5.si/upload', {
+    const response = await fetch('https://app.nitmcr.f5.si/upload', {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`
@@ -270,7 +270,7 @@ async function uploadMultipleFiles(files, path = '') {
     
     if (path) formData.append('path', path);
     
-    const response = await fetch('http://app.nitmcr.f5.si/upload-multiple', {
+    const response = await fetch('https://app.nitmcr.f5.si/upload-multiple', {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`
@@ -289,8 +289,8 @@ async function uploadMultipleFiles(files, path = '') {
 async function listFiles(path = '') {
     const token = localStorage.getItem('accessToken');
     const url = path ? 
-        `http://app.nitmcr.f5.si/list?path=${encodeURIComponent(path)}` :
-        'http://app.nitmcr.f5.si/list';
+        `https://app.nitmcr.f5.si/list?path=${encodeURIComponent(path)}` :
+        'https://app.nitmcr.f5.si/list';
     
     const response = await fetch(url, {
         headers: {
@@ -309,8 +309,8 @@ async function listFiles(path = '') {
 async function listFilesWithDetails(path = '') {
     const token = localStorage.getItem('accessToken');
     const url = path ? 
-        `http://app.nitmcr.f5.si/list-details?path=${encodeURIComponent(path)}` :
-        'http://app.nitmcr.f5.si/list-details';
+        `https://app.nitmcr.f5.si/list-details?path=${encodeURIComponent(path)}` :
+        'https://app.nitmcr.f5.si/list-details';
     
     const response = await fetch(url, {
         headers: {
@@ -329,8 +329,8 @@ async function listFilesWithDetails(path = '') {
 async function getFileInfo(filename, path = '') {
     const token = localStorage.getItem('accessToken');
     const url = path ? 
-        `http://app.nitmcr.f5.si/info?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(filename)}` :
-        `http://app.nitmcr.f5.si/info?filename=${encodeURIComponent(filename)}`;
+        `https://app.nitmcr.f5.si/info?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(filename)}` :
+        `https://app.nitmcr.f5.si/info?filename=${encodeURIComponent(filename)}`;
     
     const response = await fetch(url, {
         headers: {
@@ -349,8 +349,8 @@ async function getFileInfo(filename, path = '') {
 async function getFileSize(filename, path = '') {
     const token = localStorage.getItem('accessToken');
     const url = path ? 
-        `http://app.nitmcr.f5.si/size?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(filename)}` :
-        `http://app.nitmcr.f5.si/size?filename=${encodeURIComponent(filename)}`;
+        `https://app.nitmcr.f5.si/size?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(filename)}` :
+        `https://app.nitmcr.f5.si/size?filename=${encodeURIComponent(filename)}`;
     
     const response = await fetch(url, {
         headers: {
